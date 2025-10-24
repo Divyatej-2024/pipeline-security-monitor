@@ -1,0 +1,11 @@
+{
+  "name": "demo-app",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"no tests\""
+  },
+  "dependencies": {
+    "express": "4.17.1"              // intentionally older version for demo vulnerability
+  }
+}
