@@ -1,0 +1,30 @@
+{
+  "name": "pipeline-security-monitor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Divyatej-2024/pipeline-security-monitor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Divyatej-2024/pipeline-security-monitor/issues"
+  },
+  "homepage": "https://github.com/Divyatej-2024/pipeline-security-monitor#readme",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.12.2",
+    "chart.js": "^4.5.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2",
+    "socket.io": "^4.8.1",
+    "winston": "^3.18.3"
+  }
+}
