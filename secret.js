@@ -5,3 +5,5 @@ const checkForSecrets = (code) => {
   ];
   return secretPatterns.some((pattern) => pattern.test(code));
 };
+
+module.exports = { checkForSecrets };

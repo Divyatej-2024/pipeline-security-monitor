@@ -1,187 +1,123 @@
-# 🚨 Pipeline Security Monitor
+# Pipeline Security Monitor
 
-## 📌 Overview
+Pipeline Security Monitor is a lightweight, real-time monitoring service for pipeline and network security events. It ingests events, applies simple detection rules, and streams alerts to a live dashboard.
 
-Pipeline Security Monitor is a real-time security monitoring and analysis platform designed to detect, analyse, and respond to suspicious activities within data pipelines and network environments.
+## What This Project Includes
 
-The system provides continuous visibility into pipeline traffic, identifies potential threats, and enables proactive mitigation through intelligent alerting and analytics.
+- Event ingestion API (`POST /api/events`)
+- Rule-based detections (failed logins, port scans, secret exposure)
+- Live dashboard with Socket.IO
+- Simple simulator for generating demo traffic
 
----
+## Architecture
 
-## 🎯 Problem Statement
+1. Ingest events via API
+2. Run detections in-memory
+3. Emit alerts and events over websockets
+4. Visualize in a web dashboard
 
-Modern organisations rely heavily on data pipelines and distributed systems, but lack visibility into:
-
-* Unauthorised access attempts
-* Suspicious traffic patterns
-* Data exfiltration risks
-* Misconfigurations in pipeline infrastructure
-
-Traditional monitoring tools are often reactive and fail to provide actionable insights.
-
----
-
-## 💡 Solution
-
-Pipeline Security Monitor delivers:
-
-* 🔍 Real-time traffic monitoring
-* ⚠️ Threat detection and alerting
-* 📊 Visual analytics dashboards
-* 🧠 Behaviour-based anomaly detection
-
-The platform transforms raw logs into meaningful security insights, enabling faster and more effective incident response.
-
----
-
-## 🚀 Key Features
-
-### 🔐 Real-Time Monitoring
-
-* Continuous ingestion of logs from network/pipeline sources
-* Live tracking of user and system activity
-
-### ⚡ Threat Detection
-
-* Detection of:
-
-  * Brute force attempts
-  * Port scanning
-  * Suspicious IP activity
-* Rule-based and anomaly-based detection
-
-### 📊 Security Dashboard
-
-* Visualisation of:
-
-  * Failed login attempts
-  * Traffic spikes
-  * Attack trends
-* Centralised monitoring interface
-
-### 🧠 Anomaly Detection (Optional AI Module)
-
-* Identifies deviations from normal behaviour
-* Flags unusual access patterns
-
-### 📁 Log Analysis
-
-* Aggregation and parsing of logs
-* Structured insights for investigation
-
----
-
-## 🏗️ System Architecture
-
-* **Data Sources**: Application logs, network traffic, system logs
-* **Processing Layer**: Log parsing and enrichment
-* **Storage**: Centralised log storage
-* **Analysis Engine**: Detection rules + anomaly detection
-* **Visualisation**: Dashboard for monitoring and insights
-
----
-
-## 🛠️ Tech Stack
-
-* Backend: Python / Node.js
-* Monitoring & Analytics: Elastic Stack
-* Networking Tools: Wireshark
-* Containerisation (optional): Docker
-* Frontend: HTML, CSS, JavaScript / React
-
----
-
-## 📸 Screenshots
-
-*(Add screenshots of your dashboard here)*
-
-* Dashboard overview
-* Alert notifications
-* Traffic analysis graphs
-
----
-
-## ▶️ Demo
-
-*(Add live demo link or video here)*
-
----
-
-## 📦 Installation
+## Quick Start
 
 ```bash
-git clone https://github.com/your-username/pipeline-security-monitor.git
-cd pipeline-security-monitor
-npm install  # or pip install -r requirements.txt
-```
-
----
-
-## ▶️ Usage
-
-```bash
-# Start backend
+npm install
 npm run start
-
-# Or for Python
-python app.py
 ```
 
-Access the dashboard at:
+Open:
 
 ```
 http://localhost:3000
 ```
 
----
+## API
 
-## 📊 Example Use Cases
+### Health
 
-* Monitoring enterprise data pipelines
-* Detecting unauthorised access attempts
-* Analysing suspicious network behaviour
-* Supporting SOC (Security Operations Centre) activities
+```
+GET /api/health
+```
 
----
+### Ingest Event
 
-## 🔐 Security Considerations
+```
+POST /api/events
+```
 
-* Ensure logs are securely stored
-* Use role-based access control (RBAC)
-* Encrypt sensitive data in transit and at rest
+Example payload:
 
----
+```json
+{
+  "source": "github-actions",
+  "type": "auth",
+  "severity": "medium",
+  "message": "Failed login attempt",
+  "ip": "203.0.113.10",
+  "user": "build-bot",
+  "outcome": "failed"
+}
+```
 
-## 📈 Future Improvements
+### Fetch Events
 
-* AI-based threat intelligence integration
-* Automated incident response
-* Cloud-native deployment (AWS/Azure)
-* Integration with SIEM tools
+```
+GET /api/events
+```
 
----
+### Fetch Alerts
 
-## 🤝 Contributing
+```
+GET /api/alerts
+```
 
-Contributions are welcome. Please fork the repository and submit a pull request.
+### Simulator
 
----
+```
+POST /api/simulate
+```
 
-## 📄 License
+Payload options:
 
-This project is licensed under the MIT License.
+```json
+{ "scenario": "failed_login" }
+{ "scenario": "port_scan" }
+{ "scenario": "secret" }
+```
 
----
+## Dashboard
 
-## 👤 Author
+The dashboard lives in `public/` and updates live via Socket.IO:
 
-**Divya Tej Pendela**
-Cybersecurity Student | Aspiring Security Analyst
+- Event stream
+- Alerts list
+- Alert trend chart
 
----
+## Configuration
 
-## ⭐ Acknowledgements
+Environment variables (optional):
 
-* Open-source security tools
-* Cybersecurity research community
-* ELK Stack ecosystem
+- `PORT` (default `3000`)
+- `ALERT_THRESHOLD` (default `5`)
+- `ALERT_WINDOW_MS` (default `300000`)
+- `MAX_EVENTS` (default `500`)
+
+## Project Notes
+
+- `secret.js` contains a tiny secret detector used by the `code` event rule.
+- `webhook.js` is a minimal GitHub webhook listener if you want to connect CI events.
+- `app/` is a demo service that can act as a monitored target.
+
+## Example Curl
+
+```bash
+curl -X POST http://localhost:3000/api/events ^
+  -H "Content-Type: application/json" ^
+  -d "{\"source\":\"pipeline\",\"type\":\"network\",\"severity\":\"high\",\"message\":\"Port probe\",\"ip\":\"198.51.100.5\",\"port\":22}"
+```
+
+## License
+
+MIT
+
+## Author
+
+Divya Tej Pendela
