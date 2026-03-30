@@ -1,4 +1,3 @@
-const socket = io();
 const eventsList = document.getElementById("events");
 const alertsList = document.getElementById("alerts");
 const eventCount = document.getElementById("event-count");
@@ -61,35 +60,27 @@ const updateChart = (alerts) => {
   chart.update();
 };
 
-socket.on("snapshot", ({ events, alerts }) => {
-  eventsData = events;
-  alertsData = alerts;
-  renderList(eventsList, events, (event) => {
+const refresh = async () => {
+  const [eventsRes, alertsRes] = await Promise.all([
+    fetch("/api/events"),
+    fetch("/api/alerts"),
+  ]);
+
+  const eventsPayload = await eventsRes.json();
+  const alertsPayload = await alertsRes.json();
+
+  eventsData = eventsPayload.events || [];
+  alertsData = alertsPayload.alerts || [];
+
+  renderList(eventsList, eventsData, (event) => {
     return `<strong>${event.type}</strong> ${event.message}<small>${event.timestamp}</small>`;
   });
-  renderList(alertsList, alerts, (alert) => {
+  renderList(alertsList, alertsData, (alert) => {
     return `<strong>${alert.type}</strong> ${alert.message}<small>${alert.timestamp}</small>`;
-  });
-  updateStats(events, alerts);
-  updateChart(alerts);
-});
-
-socket.on("event:new", (event) => {
-  eventsData = [event, ...eventsData].slice(0, 100);
-  renderList(eventsList, eventsData, (item) => {
-    return `<strong>${item.type}</strong> ${item.message}<small>${item.timestamp}</small>`;
-  });
-  updateStats(eventsData, alertsData);
-});
-
-socket.on("alert:new", (alert) => {
-  alertsData = [alert, ...alertsData].slice(0, 100);
-  renderList(alertsList, alertsData, (item) => {
-    return `<strong>${item.type}</strong> ${item.message}<small>${item.timestamp}</small>`;
   });
   updateStats(eventsData, alertsData);
   updateChart(alertsData);
-});
+};
 
 const simulate = async (scenario) => {
   await fetch("/api/simulate", {
@@ -108,3 +99,6 @@ document.getElementById("simulate-scan").addEventListener("click", () => {
 document.getElementById("simulate-secret").addEventListener("click", () => {
   simulate("secret");
 });
+
+refresh();
+setInterval(refresh, 3000);

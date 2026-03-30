@@ -85,11 +85,13 @@ Payload options:
 
 ## Dashboard
 
-The dashboard lives in `public/` and updates live via Socket.IO:
+The dashboard lives in `public/` and updates live via polling:
 
 - Event stream
 - Alerts list
 - Alert trend chart
+
+The default refresh interval is 3 seconds.
 
 ## Configuration
 
@@ -99,6 +101,20 @@ Environment variables (optional):
 - `ALERT_THRESHOLD` (default `5`)
 - `ALERT_WINDOW_MS` (default `300000`)
 - `MAX_EVENTS` (default `500`)
+
+## Vercel Deployment
+
+This project is Vercel-friendly and uses API polling instead of WebSockets.
+
+1. Push this repository to GitHub.
+2. In Vercel, click **New Project** and import the repo.
+3. Framework preset: `Other`.
+4. Build command: leave empty.
+5. Output directory: leave empty.
+6. Deploy.
+
+Vercel will serve the dashboard from `public/` and route API requests to
+`api/index.js`.
 
 ## Project Notes
 
