@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: pipesentinel-backend
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: INGESTION_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pipesentinel-db
+          property: connectionString
+
+databases:
+  - name: pipesentinel-db
+    plan: starter

@@ -1,7 +1,5 @@
-const { createApp } = require("../server/monitor");
+const { buildApp } = require("../server/app");
 
-const app = createApp();
+const app = buildApp();
 
-module.exports = (req, res) => {
-  app(req, res);
-};
+module.exports = (req, res) => app(req, res);

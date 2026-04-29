@@ -1,17 +1,19 @@
-const path = require("path");
-const express = require("express");
-const dotenv = require("dotenv");
-const { createApp } = require("./server/monitor");
+const http = require("http");
+const { buildApp } = require("./server/app");
+const { env } = require("./server/config/env");
+const { setupSocketIo } = require("./server/sockets/setupSocketIo");
+const { startIngestionWorker } = require("./server/workers/ingestionWorker");
+const { logger } = require("./server/utils/logger");
 
-dotenv.config();
+const app = buildApp();
+const server = http.createServer(app);
+setupSocketIo(server, env.corsOrigin);
 
-const PORT = Number(process.env.PORT || 3000);
-const app = createApp();
-
-app.use(express.static(path.join(__dirname, "public")));
-
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`PipeSentinel SOC listening on ${PORT}`);
+server.listen(env.port, () => {
+  logger.info("pipesentinel_started", { port: env.port, environment: env.nodeEnv });
+  if (env.databaseUrl) {
+    startIngestionWorker();
+  } else {
+    logger.warn("worker_disabled", { reason: "DATABASE_URL is not configured" });
+  }
 });
-

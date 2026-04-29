@@ -1,121 +1,84 @@
-# PipeSentinel (Pipeline Security Monitor)
+# PipeSentinel
 
-PipeSentinel is a production-style SOC monitoring platform for CI/CD and runtime pipeline telemetry. It ingests security events, detects attack behaviors, scores risk, prioritizes alerts, and exposes dashboard/report APIs for analyst workflows.
+## Architecture Diagram
 
-## Business Context
+[External Sensors/CI Hooks]
+    -> HTTPS POST /api/ingest (API key + validation + rate limit)
+        -> Ingestion Service
+            -> Detection Service (brute force, port scanning, behavior anomaly)
+            -> Scoring Service (weights + time decay + risk level)
+            -> PostgreSQL (events, assets, alerts)
+            -> Analytics Service (metrics/trends/breakdown/top assets)
+            -> Socket.IO Broadcast (soc:update)
+                -> React SOC Dashboard (multi-client live sync)
 
-Modern delivery pipelines are a high-value attack surface. PipeSentinel helps security teams:
-- Detect credential abuse and brute-force patterns early.
-- Identify reconnaissance activity such as port scans before exploitation.
-- Prioritize high-impact incidents using risk scoring, not raw event volume.
-- Track organization-wide risk posture and event trends for operations and reporting.
+[Background Worker]
+    -> synthetic event generation loop
+    -> uses same ingestion pipeline and persistence
 
-## Architecture
+## Data Flow
 
-### Layers
-1. Data ingestion: `POST /api/events` and `POST /api/events/batch`.
-2. Detection engine: rule-based detection + anomaly spike detection.
-3. Risk scoring: per-event score, IP-level aggregation, org-level aggregation.
-4. API layer: dashboard, alerts, events, simulation, reset, and `/report`.
-5. Frontend SOC dashboard: KPIs, trends, threat breakdown, priority tables.
+1. Incoming event is authenticated and validated.
+2. Event is processed through detection and scoring.
+3. Event and related alerts are persisted in PostgreSQL.
+4. Aggregated analytics are recalculated through SQL queries.
+5. Socket layer broadcasts delta updates to connected clients.
+6. Dashboard merges live updates and periodic API refreshes.
 
-### Data Flow
-1. Event enters API and is schema validated.
-2. Detection engine tags threat types (if any).
-3. Risk engine calculates event score + cumulative IP score.
-4. Alert prioritization assigns `Low/Medium/High/Critical` and color class.
-5. Analytics service computes trends, top-risk IPs, and report insights.
-6. Dashboard pulls `/api/dashboard` every 5 seconds.
+## Core Endpoints
 
-## Folder Structure
+- GET /health
+- GET /api/metrics
+- GET /api/alerts
+- GET /api/events/trend
+- GET /api/threats/breakdown
+- GET /api/assets/top-risks
+- POST /api/alerts/:id/acknowledge
+- POST /api/ingest
 
-```text
-pipeline-security-monitor/
-  api/
-    [...path].js
-  public/
-    index.html
-    styles.css
-    app.js
-  server/
-    monitor.js
-    core/
-      config.js
-      validation.js
-      detection.js
-      risk.js
-      analytics.js
-      store.js
-    data/
-      generator.js
-  index.js
-  vercel.json
-  package.json
-```
+## Environment Variables
 
-## Event Model
+Backend:
+- PORT=3000
+- NODE_ENV=development
+- DATABASE_URL=postgres://user:pass@host:5432/pipesentinel
+- INGESTION_API_KEY=replace-with-secure-key
+- CORS_ORIGIN=http://localhost:5173
+- RATE_LIMIT_WINDOW_MS=60000
+- RATE_LIMIT_MAX=120
+- WORKER_INTERVAL_MS=5000
 
-```json
-{
-  "ipAddress": "203.0.113.4",
-  "eventType": "failed_login",
-  "timestamp": "2026-04-29T12:30:00.000Z"
-}
-```
+Frontend:
+- VITE_API_BASE_URL=http://localhost:3000
 
-Supported `eventType` values:
-- `failed_login`
-- `port_scan`
-- `suspicious_traffic`
+## Database Setup
 
-Optional fields: `port`, `bytes`, `protocol`, `sourceSystem`.
+Run SQL scripts in order:
+1. db/schema.sql
+2. db/seed.sql
 
-## Detection + Scoring
+## Deploy
 
-Base score model:
-- Failed login: `+20`
-- Port scan: `+40`
-- Suspicious traffic: `+60`
+Backend (Render/Railway):
+- Deploy root service with `npm start`.
+- Provision PostgreSQL and set `DATABASE_URL`.
+- Set `INGESTION_API_KEY`, `CORS_ORIGIN`, and rate-limit envs.
 
-Detection logic:
-- Brute force: repeated failed logins from same IP in 10 minutes.
-- Active port scan: high unique-port activity in 3 minutes.
-- Suspicious traffic cluster: repeated suspicious traffic in 5 minutes.
-- Anomaly spike: threshold-based traffic burst from same IP.
+Frontend (Vercel):
+- Root directory: `frontend`
+- Build command: `npm run build`
+- Output directory: `dist`
+- Env: `VITE_API_BASE_URL=https://<backend-host>`
 
-Risk levels:
-- Low
-- Medium
-- High
-- Critical
+## Local Run
 
-## API Endpoints
+Terminal 1:
+- npm install
+- npm start
 
-- `GET /api/health`
-- `POST /api/events`
-- `POST /api/events/batch`
-- `GET /api/events`
-- `GET /api/alerts`
-- `GET /api/dashboard`
-- `POST /api/simulate` (generates 500-1000 realistic events)
-- `POST /api/reset`
-- `GET /report`
+Terminal 2:
+- cd frontend
+- npm install
+- npm run dev
 
-## Run Locally
-
-```bash
-npm install
-npm start
-```
-
-Open `http://localhost:3000`.
-
-## Sample Data
-
-On startup, PipeSentinel auto-seeds ~800 events including:
-- Coordinated failed-login bursts
-- Port scan sequences
-- Suspicious traffic clusters
-- Benign background telemetry
-
-This keeps the dashboard populated for demos and interviews.
+Open http://localhost:5173
