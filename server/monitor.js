@@ -1,95 +1,97 @@
 const express = require("express");
 const cors = require("cors");
 const winston = require("winston");
-const { checkForSecrets } = require("../secret");
-
-const ALERT_THRESHOLD = Number(process.env.ALERT_THRESHOLD || 5);
-const ALERT_WINDOW_MS = Number(process.env.ALERT_WINDOW_MS || 5 * 60 * 1000);
-const MAX_EVENTS = Number(process.env.MAX_EVENTS || 500);
+const { validateEventPayload } = require("./core/validation");
+const { runDetection } = require("./core/detection");
+const { getRiskLevel, scoreEvent, toPriority } = require("./core/risk");
+const { summarizeThreats, buildTrend, topRiskIps, buildInsights } = require("./core/analytics");
+const { state, appendWithCap, upsertIpRisk, resetStore } = require("./core/store");
+const { generateSampleEvents } = require("./data/generator");
 
 const logger = winston.createLogger({
-  level: "info",
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
+  level: process.env.LOG_LEVEL || "info",
+  format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
   transports: [new winston.transports.Console()],
 });
 
-const state = {
-  events: [],
-  alerts: [],
-  failedLoginsByIp: new Map(),
-  portsByIp: new Map(),
+const buildAlert = (event, threatType, eventRisk, ipRiskScore) => {
+  const riskLevel = getRiskLevel(Math.max(eventRisk, ipRiskScore));
+  const priority = toPriority(riskLevel);
+
+  return {
+    id: `alt-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    threatType,
+    ipAddress: event.ipAddress,
+    timestamp: event.timestamp,
+    eventRisk,
+    ipRiskScore,
+    riskLevel,
+    priorityColor: priority.color,
+    message: `${threatType} detected for ${event.ipAddress}`,
+  };
 };
 
-const pruneOld = (timestamps, windowMs) =>
-  timestamps.filter((ts) => Date.now() - ts <= windowMs);
+const ingestEvent = (rawPayload) => {
+  const event = validateEventPayload(rawPayload);
+  const detectedThreats = runDetection(event, state.signalState);
+  const eventRisk = scoreEvent(event.eventType, detectedThreats);
+  const ipRiskScore = upsertIpRisk(event.ipAddress, eventRisk);
+  state.orgRiskScore += eventRisk;
 
-const addEvent = (event) => {
-  state.events.unshift(event);
-  if (state.events.length > MAX_EVENTS) state.events.pop();
+  const enrichedEvent = {
+    id: `evt-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    ...event,
+    detectedThreats,
+    eventRisk,
+    ipRiskScore,
+    riskLevel: getRiskLevel(ipRiskScore),
+  };
+
+  appendWithCap(state.events, enrichedEvent);
+
+  for (const threatType of detectedThreats) {
+    appendWithCap(state.alerts, buildAlert(event, threatType, eventRisk, ipRiskScore));
+  }
+
+  return enrichedEvent;
 };
 
-const addAlert = (alert) => {
-  state.alerts.unshift(alert);
-  if (state.alerts.length > MAX_EVENTS) state.alerts.pop();
-};
-
-const trackFailedLogin = (event) => {
-  const ip = event.ip || "unknown";
-  const timestamps = state.failedLoginsByIp.get(ip) || [];
-  const pruned = pruneOld([...timestamps, Date.now()], ALERT_WINDOW_MS);
-  state.failedLoginsByIp.set(ip, pruned);
-  if (pruned.length >= ALERT_THRESHOLD) {
-    addAlert({
-      id: `alert-${Date.now()}`,
-      type: "brute_force",
-      severity: "high",
-      ip,
-      message: `Multiple failed logins detected from ${ip}`,
-      timestamp: new Date().toISOString(),
-    });
+const ingestBatch = (events) => {
+  for (const item of events) {
+    ingestEvent(item);
   }
 };
 
-const trackPortScan = (event) => {
-  if (!event.port) return;
-  const ip = event.ip || "unknown";
-  const record = state.portsByIp.get(ip) || { ports: new Set(), lastSeen: [] };
-  record.ports.add(event.port);
-  record.lastSeen = pruneOld([...record.lastSeen, Date.now()], 60 * 1000);
-  state.portsByIp.set(ip, record);
-  if (record.ports.size >= 10 && record.lastSeen.length >= 10) {
-    addAlert({
-      id: `alert-${Date.now()}`,
-      type: "port_scan",
-      severity: "medium",
-      ip,
-      message: `Possible port scanning activity from ${ip}`,
-      timestamp: new Date().toISOString(),
-    });
-  }
+const buildDashboardSummary = () => {
+  const highRiskAlerts = state.alerts.filter((alert) => ["High", "Critical"].includes(alert.riskLevel)).length;
+
+  return {
+    totalEvents: state.events.length,
+    threatsDetected: state.alerts.length,
+    highRiskAlerts,
+    overallRiskScore: state.orgRiskScore,
+    overallRiskLevel: getRiskLevel(state.orgRiskScore),
+    topRiskIps: topRiskIps(state.byIpRisk),
+    trend: buildTrend(state.events),
+    threatBreakdown: summarizeThreats(state.alerts),
+    recentThreats: state.alerts.slice(0, 20),
+  };
 };
 
-const runDetections = (event) => {
-  if (event.type === "auth" && event.outcome === "failed") {
-    trackFailedLogin(event);
-  }
-  if (event.type === "network") {
-    trackPortScan(event);
-  }
-  if (event.type === "code" && typeof event.payload === "string") {
-    if (checkForSecrets(event.payload)) {
-      addAlert({
-        id: `alert-${Date.now()}`,
-        type: "secret_exposure",
-        severity: "critical",
-        message: "Potential secret detected in payload",
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }
+const buildReport = () => {
+  const summary = buildDashboardSummary();
+  return {
+    generatedAt: new Date().toISOString(),
+    threatSummary: summary.threatBreakdown,
+    riskOverview: {
+      organizationRiskScore: summary.overallRiskScore,
+      organizationRiskLevel: summary.overallRiskLevel,
+      highRiskAlerts: summary.highRiskAlerts,
+      topRiskIps: summary.topRiskIps,
+    },
+    keyInsights: buildInsights(state.events, state.alerts, state.orgRiskScore),
+    trendAnalysis: summary.trend,
+  };
 };
 
 const createApp = () => {
@@ -98,111 +100,72 @@ const createApp = () => {
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString() });
-  });
-
-  app.get("/api/events", (req, res) => {
-    res.json({ events: state.events });
-  });
-
-  app.get("/api/alerts", (req, res) => {
-    res.json({ alerts: state.alerts });
+    res.json({ status: "ok", service: "PipeSentinel", timestamp: new Date().toISOString() });
   });
 
   app.post("/api/events", (req, res) => {
-    const {
-      source = "unknown",
-      type = "generic",
-      severity = "low",
-      message = "event received",
-      ip,
-      user,
-      port,
-      outcome,
-      payload,
-    } = req.body || {};
+    try {
+      const ingested = ingestEvent(req.body);
+      logger.info("event_ingested", { eventId: ingested.id, ipAddress: ingested.ipAddress });
+      res.status(201).json({ ok: true, event: ingested });
+    } catch (error) {
+      res.status(400).json({ ok: false, error: error.message });
+    }
+  });
 
-    const event = {
-      id: `evt-${Date.now()}`,
-      source,
-      type,
-      severity,
-      message,
-      ip,
-      user,
-      port,
-      outcome,
-      payload,
-      timestamp: new Date().toISOString(),
-    };
+  app.post("/api/events/batch", (req, res) => {
+    const events = Array.isArray(req.body?.events) ? req.body.events : [];
+    if (!events.length) return res.status(400).json({ ok: false, error: "events array is required" });
 
-    addEvent(event);
-    runDetections(event);
-    logger.info("event_ingested", { event });
-    res.status(201).json({ ok: true, event });
+    const accepted = [];
+    const rejected = [];
+
+    for (const candidate of events) {
+      try {
+        accepted.push(ingestEvent(candidate));
+      } catch (error) {
+        rejected.push({ payload: candidate, reason: error.message });
+      }
+    }
+
+    res.status(207).json({ ok: true, accepted: accepted.length, rejected: rejected.length, rejectedItems: rejected });
   });
 
   app.post("/api/simulate", (req, res) => {
-    const { scenario = "failed_login" } = req.body || {};
-    const ip = "203.0.113.10";
-
-    if (scenario === "failed_login") {
-      for (let i = 0; i < ALERT_THRESHOLD; i += 1) {
-        addEvent({
-          id: `evt-${Date.now()}-${i}`,
-          source: "simulator",
-          type: "auth",
-          severity: "medium",
-          message: "Failed login",
-          ip,
-          outcome: "failed",
-          timestamp: new Date().toISOString(),
-        });
-        runDetections({
-          type: "auth",
-          outcome: "failed",
-          ip,
-        });
-      }
-    }
-
-    if (scenario === "port_scan") {
-      for (let port = 20; port < 35; port += 1) {
-        addEvent({
-          id: `evt-${Date.now()}-${port}`,
-          source: "simulator",
-          type: "network",
-          severity: "medium",
-          message: `Port probe ${port}`,
-          ip,
-          port,
-          timestamp: new Date().toISOString(),
-        });
-        runDetections({
-          type: "network",
-          ip,
-          port,
-        });
-      }
-    }
-
-    if (scenario === "secret") {
-      const payload = "api_key='ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'";
-      addEvent({
-        id: `evt-${Date.now()}`,
-        source: "simulator",
-        type: "code",
-        severity: "high",
-        message: "Potential secret in code",
-        ip,
-        payload,
-        timestamp: new Date().toISOString(),
-      });
-      runDetections({ type: "code", payload });
-    }
-
-    res.json({ ok: true, scenario });
+    const count = Number(req.body?.count || 800);
+    ingestBatch(generateSampleEvents(count));
+    res.json({ ok: true, generated: Math.max(500, Math.min(count, 1000)) });
   });
+
+  app.get("/api/events", (req, res) => {
+    res.json({ events: state.events.slice(0, 200) });
+  });
+
+  app.get("/api/alerts", (req, res) => {
+    const sorted = [...state.alerts].sort((a, b) => {
+      const levelRank = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+      return levelRank[b.riskLevel] - levelRank[a.riskLevel];
+    });
+    res.json({ alerts: sorted.slice(0, 200) });
+  });
+
+  app.get("/api/dashboard", (req, res) => {
+    res.json(buildDashboardSummary());
+  });
+
+  app.get("/report", (req, res) => {
+    res.json(buildReport());
+  });
+
+  app.post("/api/reset", (req, res) => {
+    resetStore();
+    ingestBatch(generateSampleEvents(800));
+    res.json({ ok: true, message: "State reset with fresh sample telemetry" });
+  });
+
+  if (!state.events.length) {
+    ingestBatch(generateSampleEvents(800));
+  }
 
   return app;
 };

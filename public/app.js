@@ -1,104 +1,65 @@
-const eventsList = document.getElementById("events");
-const alertsList = document.getElementById("alerts");
-const eventCount = document.getElementById("event-count");
-const alertCount = document.getElementById("alert-count");
-const lastAlert = document.getElementById("last-alert");
-let eventsData = [];
-let alertsData = [];
+const byId = (id) => document.getElementById(id);
 
-const alertBuckets = {
-  labels: ["Critical", "High", "Medium", "Low"],
-  data: [0, 0, 0, 0],
-};
-
-const chart = new Chart(document.getElementById("alertChart"), {
-  type: "bar",
-  data: {
-    labels: alertBuckets.labels,
-    datasets: [
-      {
-        label: "Alerts",
-        data: alertBuckets.data,
-        backgroundColor: ["#e11d48", "#f97316", "#facc15", "#38bdf8"],
-      },
-    ],
-  },
-  options: {
-    responsive: true,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true, ticks: { stepSize: 1 } },
-    },
-  },
+const trendChart = new Chart(byId("trendChart"), {
+  type: "line",
+  data: { labels: [], datasets: [{ label: "Events", data: [], borderColor: "#22d3ee", tension: 0.25 }] },
+  options: { responsive: true, plugins: { legend: { display: false } } },
 });
 
-const renderList = (list, items, formatter) => {
-  list.innerHTML = "";
-  items.slice(0, 10).forEach((item) => {
-    const li = document.createElement("li");
-    li.innerHTML = formatter(item);
-    list.appendChild(li);
-  });
-};
+const threatChart = new Chart(byId("threatChart"), {
+  type: "doughnut",
+  data: {
+    labels: ["brute_force", "active_port_scan", "suspicious_traffic_cluster", "traffic_anomaly_spike"],
+    datasets: [{ data: [0, 0, 0, 0], backgroundColor: ["#f97316", "#eab308", "#ef4444", "#8b5cf6"] }],
+  },
+  options: { responsive: true },
+});
 
-const updateStats = (events, alerts) => {
-  eventCount.textContent = events.length;
-  alertCount.textContent = alerts.length;
-  lastAlert.textContent = alerts[0]?.type || "None";
-};
-
-const updateChart = (alerts) => {
-  const counts = { critical: 0, high: 0, medium: 0, low: 0 };
-  alerts.forEach((alert) => {
-    const key = (alert.severity || "low").toLowerCase();
-    if (counts[key] !== undefined) counts[key] += 1;
-  });
-  alertBuckets.data[0] = counts.critical;
-  alertBuckets.data[1] = counts.high;
-  alertBuckets.data[2] = counts.medium;
-  alertBuckets.data[3] = counts.low;
-  chart.update();
+const renderTable = (targetId, rowsHtml) => {
+  byId(targetId).innerHTML = rowsHtml.join("");
 };
 
 const refresh = async () => {
-  const [eventsRes, alertsRes] = await Promise.all([
-    fetch("/api/events"),
-    fetch("/api/alerts"),
-  ]);
+  const summary = await fetch("/api/dashboard").then((r) => r.json());
 
-  const eventsPayload = await eventsRes.json();
-  const alertsPayload = await alertsRes.json();
+  byId("total-events").textContent = summary.totalEvents;
+  byId("threats-detected").textContent = summary.threatsDetected;
+  byId("high-risk").textContent = summary.highRiskAlerts;
+  byId("org-risk").textContent = summary.overallRiskScore;
+  byId("org-risk-level").textContent = summary.overallRiskLevel;
 
-  eventsData = eventsPayload.events || [];
-  alertsData = alertsPayload.alerts || [];
+  trendChart.data.labels = summary.trend.map((x) => new Date(x.time).toLocaleTimeString());
+  trendChart.data.datasets[0].data = summary.trend.map((x) => x.count);
+  trendChart.update();
 
-  renderList(eventsList, eventsData, (event) => {
-    return `<strong>${event.type}</strong> ${event.message}<small>${event.timestamp}</small>`;
-  });
-  renderList(alertsList, alertsData, (alert) => {
-    return `<strong>${alert.type}</strong> ${alert.message}<small>${alert.timestamp}</small>`;
-  });
-  updateStats(eventsData, alertsData);
-  updateChart(alertsData);
+  const threatOrder = threatChart.data.labels;
+  threatChart.data.datasets[0].data = threatOrder.map((name) => summary.threatBreakdown[name] || 0);
+  threatChart.update();
+
+  renderTable(
+    "alert-table",
+    summary.recentThreats.slice(0, 12).map(
+      (alert) => `<tr><td>${alert.threatType}</td><td>${alert.ipAddress}</td><td>${alert.ipRiskScore}</td><td class="sev-${alert.riskLevel}">${alert.riskLevel}</td><td>${new Date(alert.timestamp).toLocaleString()}</td></tr>`
+    )
+  );
+
+  renderTable(
+    "ip-table",
+    summary.topRiskIps.map(
+      (item) => `<tr><td>${item.ipAddress}</td><td>${item.score}</td><td class="sev-${item.level}">${item.level}</td></tr>`
+    )
+  );
 };
 
-const simulate = async (scenario) => {
-  await fetch("/api/simulate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scenario }),
-  });
-};
+byId("seed").addEventListener("click", async () => {
+  await fetch("/api/simulate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count: 900 }) });
+  await refresh();
+});
 
-document.getElementById("simulate-login").addEventListener("click", () => {
-  simulate("failed_login");
-});
-document.getElementById("simulate-scan").addEventListener("click", () => {
-  simulate("port_scan");
-});
-document.getElementById("simulate-secret").addEventListener("click", () => {
-  simulate("secret");
+byId("reset").addEventListener("click", async () => {
+  await fetch("/api/reset", { method: "POST" });
+  await refresh();
 });
 
 refresh();
-setInterval(refresh, 3000);
+setInterval(refresh, 5000);

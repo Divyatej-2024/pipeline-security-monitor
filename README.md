@@ -1,139 +1,121 @@
-# Pipeline Security Monitor
+# PipeSentinel (Pipeline Security Monitor)
 
-Pipeline Security Monitor is a lightweight, real-time monitoring service for pipeline and network security events. It ingests events, applies simple detection rules, and streams alerts to a live dashboard.
+PipeSentinel is a production-style SOC monitoring platform for CI/CD and runtime pipeline telemetry. It ingests security events, detects attack behaviors, scores risk, prioritizes alerts, and exposes dashboard/report APIs for analyst workflows.
 
-## What This Project Includes
+## Business Context
 
-- Event ingestion API (`POST /api/events`)
-- Rule-based detections (failed logins, port scans, secret exposure)
-- Live dashboard with Socket.IO
-- Simple simulator for generating demo traffic
+Modern delivery pipelines are a high-value attack surface. PipeSentinel helps security teams:
+- Detect credential abuse and brute-force patterns early.
+- Identify reconnaissance activity such as port scans before exploitation.
+- Prioritize high-impact incidents using risk scoring, not raw event volume.
+- Track organization-wide risk posture and event trends for operations and reporting.
 
 ## Architecture
 
-1. Ingest events via API
-2. Run detections in-memory
-3. Emit alerts and events over websockets
-4. Visualize in a web dashboard
+### Layers
+1. Data ingestion: `POST /api/events` and `POST /api/events/batch`.
+2. Detection engine: rule-based detection + anomaly spike detection.
+3. Risk scoring: per-event score, IP-level aggregation, org-level aggregation.
+4. API layer: dashboard, alerts, events, simulation, reset, and `/report`.
+5. Frontend SOC dashboard: KPIs, trends, threat breakdown, priority tables.
 
-## Quick Start
+### Data Flow
+1. Event enters API and is schema validated.
+2. Detection engine tags threat types (if any).
+3. Risk engine calculates event score + cumulative IP score.
+4. Alert prioritization assigns `Low/Medium/High/Critical` and color class.
+5. Analytics service computes trends, top-risk IPs, and report insights.
+6. Dashboard pulls `/api/dashboard` every 5 seconds.
 
-```bash
-npm install
-npm run start
+## Folder Structure
+
+```text
+pipeline-security-monitor/
+  api/
+    [...path].js
+  public/
+    index.html
+    styles.css
+    app.js
+  server/
+    monitor.js
+    core/
+      config.js
+      validation.js
+      detection.js
+      risk.js
+      analytics.js
+      store.js
+    data/
+      generator.js
+  index.js
+  vercel.json
+  package.json
 ```
 
-Open:
-
-```
-http://localhost:3000
-```
-
-## API
-
-### Health
-
-```
-GET /api/health
-```
-
-### Ingest Event
-
-```
-POST /api/events
-```
-
-Example payload:
+## Event Model
 
 ```json
 {
-  "source": "github-actions",
-  "type": "auth",
-  "severity": "medium",
-  "message": "Failed login attempt",
-  "ip": "203.0.113.10",
-  "user": "build-bot",
-  "outcome": "failed"
+  "ipAddress": "203.0.113.4",
+  "eventType": "failed_login",
+  "timestamp": "2026-04-29T12:30:00.000Z"
 }
 ```
 
-### Fetch Events
+Supported `eventType` values:
+- `failed_login`
+- `port_scan`
+- `suspicious_traffic`
 
-```
-GET /api/events
-```
+Optional fields: `port`, `bytes`, `protocol`, `sourceSystem`.
 
-### Fetch Alerts
+## Detection + Scoring
 
-```
-GET /api/alerts
-```
+Base score model:
+- Failed login: `+20`
+- Port scan: `+40`
+- Suspicious traffic: `+60`
 
-### Simulator
+Detection logic:
+- Brute force: repeated failed logins from same IP in 10 minutes.
+- Active port scan: high unique-port activity in 3 minutes.
+- Suspicious traffic cluster: repeated suspicious traffic in 5 minutes.
+- Anomaly spike: threshold-based traffic burst from same IP.
 
-```
-POST /api/simulate
-```
+Risk levels:
+- Low
+- Medium
+- High
+- Critical
 
-Payload options:
+## API Endpoints
 
-```json
-{ "scenario": "failed_login" }
-{ "scenario": "port_scan" }
-{ "scenario": "secret" }
-```
+- `GET /api/health`
+- `POST /api/events`
+- `POST /api/events/batch`
+- `GET /api/events`
+- `GET /api/alerts`
+- `GET /api/dashboard`
+- `POST /api/simulate` (generates 500-1000 realistic events)
+- `POST /api/reset`
+- `GET /report`
 
-## Dashboard
-
-The dashboard lives in `public/` and updates live via polling:
-
-- Event stream
-- Alerts list
-- Alert trend chart
-
-The default refresh interval is 3 seconds.
-
-## Configuration
-
-Environment variables (optional):
-
-- `PORT` (default `3000`)
-- `ALERT_THRESHOLD` (default `5`)
-- `ALERT_WINDOW_MS` (default `300000`)
-- `MAX_EVENTS` (default `500`)
-
-## Vercel Deployment
-
-This project is Vercel-friendly and uses API polling instead of WebSockets.
-
-1. Push this repository to GitHub.
-2. In Vercel, click **New Project** and import the repo.
-3. Framework preset: `Other`.
-4. Build command: leave empty.
-5. Output directory: leave empty.
-6. Deploy.
-
-Vercel will serve the dashboard from `public/` and route API requests to
-`api/index.js`.
-
-## Project Notes
-
-- `secret.js` contains a tiny secret detector used by the `code` event rule.
-- `webhook.js` is a minimal GitHub webhook listener if you want to connect CI events.
-- `app/` is a demo service that can act as a monitored target.
-
-## Example Curl
+## Run Locally
 
 ```bash
-curl -X POST http://localhost:3000/api/events ^
-  -H "Content-Type: application/json" ^
-  -d "{\"source\":\"pipeline\",\"type\":\"network\",\"severity\":\"high\",\"message\":\"Port probe\",\"ip\":\"198.51.100.5\",\"port\":22}"
+npm install
+npm start
 ```
 
-## License
+Open `http://localhost:3000`.
 
-MIT
+## Sample Data
 
-## Author
+On startup, PipeSentinel auto-seeds ~800 events including:
+- Coordinated failed-login bursts
+- Port scan sequences
+- Suspicious traffic clusters
+- Benign background telemetry
 
-Divya Tej Pendela
+This keeps the dashboard populated for demos and interviews.

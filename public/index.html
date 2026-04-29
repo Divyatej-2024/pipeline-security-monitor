@@ -3,51 +3,53 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pipeline Security Monitor</title>
+    <title>PipeSentinel SOC</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="hero">
-      <div class="hero__content">
-        <p class="hero__eyebrow">Pipeline Security Monitor</p>
-        <h1>Real-time visibility for your data pipelines</h1>
-        <p class="hero__sub">
-          Ingest events, detect threats, and watch alerts stream in live.
-        </p>
-        <div class="hero__actions">
-          <button id="simulate-login">Simulate Failed Logins</button>
-          <button id="simulate-scan">Simulate Port Scan</button>
-          <button id="simulate-secret">Simulate Secret Leak</button>
-        </div>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">PipeSentinel</p>
+        <h1>Pipeline Security Operations Center</h1>
       </div>
-      <div class="hero__panel">
-        <div class="stat">
-          <span id="event-count">0</span>
-          <small>Events</small>
-        </div>
-        <div class="stat">
-          <span id="alert-count">0</span>
-          <small>Alerts</small>
-        </div>
-        <div class="stat">
-          <span id="last-alert">None</span>
-          <small>Latest Alert</small>
-        </div>
+      <div class="actions">
+        <button id="seed">Generate Attack Telemetry</button>
+        <button id="reset">Reset + Rebuild Dataset</button>
       </div>
     </header>
 
-    <main class="grid">
-      <section class="panel">
-        <h2>Live Alerts</h2>
-        <ul id="alerts"></ul>
+    <main class="layout">
+      <section class="kpi-grid">
+        <article class="card"><h2>Total Events</h2><p id="total-events">0</p></article>
+        <article class="card"><h2>Threats Detected</h2><p id="threats-detected">0</p></article>
+        <article class="card"><h2>High-Risk Alerts</h2><p id="high-risk">0</p></article>
+        <article class="card"><h2>Org Risk Score</h2><p id="org-risk">0</p><small id="org-risk-level">Low</small></article>
       </section>
-      <section class="panel">
-        <h2>Recent Events</h2>
-        <ul id="events"></ul>
+
+      <section class="panel chart-panel">
+        <h3>Event Volume Trend (per minute)</h3>
+        <canvas id="trendChart"></canvas>
       </section>
-      <section class="panel chart">
-        <h2>Alert Trends</h2>
-        <canvas id="alertChart" height="140"></canvas>
+
+      <section class="panel chart-panel">
+        <h3>Threat Breakdown</h3>
+        <canvas id="threatChart"></canvas>
+      </section>
+
+      <section class="panel">
+        <h3>Priority Alerts</h3>
+        <table>
+          <thead><tr><th>Threat</th><th>IP</th><th>Risk</th><th>Priority</th><th>Timestamp</th></tr></thead>
+          <tbody id="alert-table"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h3>Top Risk Assets (IP)</h3>
+        <table>
+          <thead><tr><th>IP Address</th><th>Risk Score</th><th>Risk Level</th></tr></thead>
+          <tbody id="ip-table"></tbody>
+        </table>
       </section>
     </main>
 
